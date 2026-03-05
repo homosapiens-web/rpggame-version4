@@ -130,6 +130,7 @@
     };
 
     let map = [], enemies = [], currentTarget = 0, currentMenu = "";
+    const size = 15;
 
     function showDmg(val, isCrit, element, color) {
         if(!element) return;
@@ -182,7 +183,6 @@
         drawMap();
     }
 
-    const size = 15;
     function drawMap() {
         const grid = document.getElementById('grid'); grid.innerHTML = '';
         for(let y=0; y<size; y++){
@@ -226,13 +226,12 @@
     function startBattle() {
         enemies = [];
         let count = Math.min(3, 1 + Math.floor(p.fl / 4));
-        // 增強怪物屬性
-        let scale = 1 + (p.fl * 0.6); 
+        let scale = 1 + (p.fl * 0.5); 
         for(let i=0; i<count; i++){
             enemies.push({
                 n: (p.fl%5==0?"【精英】":"")+"怪獸 "+(i+1), 
-                h: Math.floor(50*scale), mH: Math.floor(50*scale), 
-                a: Math.floor(15*scale),
+                h: Math.floor(40*scale), mH: Math.floor(40*scale), 
+                a: Math.floor(10*scale),
                 img: Math.random()>0.5?"en-slime":"en-skel", st: "", stT: 0
             });
         }
@@ -253,19 +252,19 @@
     }
 
     function toggleMenu(type) {
-        const msgBox = document.getElementById('msg-box');
-        if (msgBox.style.display === 'flex' && currentMenu === type) {
-            msgBox.style.display = 'none';
-            currentMenu = "";
+        const box = document.getElementById('msg-box');
+        // 如果選單已經打開，且點的是同一個按鈕，就關閉
+        if (box.style.display === 'flex' && currentMenu === type) {
+            closeMsg();
             return;
         }
+        
         currentMenu = type;
         if(type === 'mag') {
             customChoice("魔法技能", p.skills.map(s => ({t:`${s.n}(${s.cost}MP)`, f:() => {
                 if(p.mp < s.cost) return addLog("MP不足！", "l-sys");
                 p.mp -= s.cost;
-                let target = enemies[currentTarget];
-                let targetEl = document.querySelectorAll('.sprite')[currentTarget];
+                let target = enemies[currentTarget], targetEl = document.querySelectorAll('.sprite')[currentTarget];
                 if(s.type=="atk") {
                     let dmg = Math.floor((p.atk+p.wAtk)*s.pwr); target.h -= dmg;
                     showDmg(dmg, true, targetEl, "#3498db"); triggerImpact(true); addLog(`技能 ${s.n}！造成 ${dmg} 傷害`, "l-dmg");
@@ -275,35 +274,30 @@
                 } else if(s.type=="cleanse") {
                     p.status=""; p.statusTurn=0; addLog("淨化！異常狀態解除", "l-heal");
                 }
-                currentMenu = ""; nextTurn();
+                nextTurn();
             }})));
         } else if(type === 'itm') {
             customChoice("使用道具", [
-                {t:`補血藥(${p.potions})`, f:() => { if(p.potions>0){p.potions--; p.hp=Math.min(p.mHp, p.hp+50); showDmg(50,false,document.getElementById('player-sprite'),"#2ecc71"); addLog("使用了補血藥", "l-heal"); currentMenu=""; nextTurn();} }},
-                {t:`補魔藥(${p.mPotions})`, f:() => { if(p.mPotions>0){p.mPotions--; p.mp=Math.min(p.mMp, p.mp+30); addLog("使用了補魔藥", "l-sys"); currentMenu=""; nextTurn();} }},
-                {t:`解毒劑(${p.antidotes})`, f:() => { if(p.antidotes>0){p.antidotes--; p.status=""; addLog("解毒完成", "l-heal"); currentMenu=""; nextTurn();} }}
+                {t:`補血藥(${p.potions})`, f:() => { if(p.potions>0){p.potions--; p.hp=Math.min(p.mHp, p.hp+50); showDmg(50,false,document.getElementById('player-sprite'),"#2ecc71"); addLog("使用了補血藥", "l-heal"); nextTurn();} }},
+                {t:`補魔藥(${p.mPotions})`, f:() => { if(p.mPotions>0){p.mPotions--; p.mp=Math.min(p.mMp, p.mp+30); addLog("使用了補魔藥", "l-sys"); nextTurn();} }},
+                {t:`解毒劑(${p.antidotes})`, f:() => { if(p.antidotes>0){p.antidotes--; p.status=""; addLog("解毒完成", "l-heal"); nextTurn();} }}
             ]);
         }
     }
 
     function battleAction(type) {
-        document.getElementById('msg-box').style.display = 'none';
-        currentMenu = "";
+        closeMsg();
         if(p.status == "麻痺" && Math.random() < 0.5){ addLog("麻痺中無法行動！", "l-sys"); setTimeout(enemyTurn, 500); return; }
         
-        let target = enemies[currentTarget];
-        let targetEl = document.querySelectorAll('.sprite')[currentTarget];
-
+        let target = enemies[currentTarget], targetEl = document.querySelectorAll('.sprite')[currentTarget];
         if(type=='atk') {
-            let isCrit = Math.random() < 0.2;
-            let dmg = Math.floor((p.atk + p.wAtk) * (0.9 + Math.random()*0.3) * (isCrit?2:1));
-            target.h -= dmg;
-            showDmg(dmg, isCrit, targetEl);
+            let isCrit = Math.random() < 0.2, dmg = Math.floor((p.atk + p.wAtk) * (0.9 + Math.random()*0.3) * (isCrit?2:1));
+            target.h -= dmg; showDmg(dmg, isCrit, targetEl);
             if(isCrit) { triggerImpact(true); addLog(`暴擊！！對 ${target.n} 造成 ${dmg} 傷害`, "l-crit"); }
             else { triggerImpact(false); addLog(`攻擊 ${target.n}，造成 ${dmg} 傷害`, "l-dmg"); }
             nextTurn();
         } else if(type=='run') {
-            if(Math.random()>0.5){ customMsg("逃離成功", () => showScreen('map-sc')); }
+            if(Math.random()>0.5) customMsg("逃離成功", () => showScreen('map-sc'));
             else { addLog("逃跑失敗！", "l-sys"); nextTurn(); }
         }
     }
@@ -324,21 +318,22 @@
         let tookDmg = false;
         enemies.forEach(en => {
             if(en.h <= 0) return;
-            let dmg = Math.max(5, en.a - (p.def+p.aDef) + Math.floor(Math.random()*5));
+            // 基礎傷害公式，確保怪物的威脅性
+            let dmg = Math.max(3, en.a - (p.def+p.aDef) + Math.floor(Math.random()*4));
             p.hp -= dmg;
             showDmg(dmg, false, document.getElementById('player-sprite'));
-            addLog(`${en.n} 猛烈攻擊造成 ${dmg} 傷害`, "l-dmg");
+            addLog(`${en.n} 攻擊造成 ${dmg} 傷害`, "l-dmg");
             tookDmg = true;
-            if(Math.random()<0.2 && !p.status) { p.status=Math.random()>0.5?"中毒":"麻痺"; p.statusTurn=3; addLog(`陷於 ${p.status}！`, "l-sys"); }
+            if(Math.random()<0.15 && !p.status) { p.status=Math.random()>0.5?"中毒":"麻痺"; p.statusTurn=3; addLog(`陷於 ${p.status}！`, "l-sys"); }
         });
         
-        if(tookDmg) triggerImpact(true);
+        if(tookDmg) triggerImpact(false);
         updateBattleUI();
         if(p.hp <= 0) customMsg("你敗北了...", () => location.reload());
     }
 
     function win() {
-        let exp = enemies.length * (30 + p.fl*15); p.exp += exp;
+        let exp = enemies.length * (30 + p.fl*12); p.exp += exp;
         customMsg(`戰鬥結束！獲得 ${exp} 經驗`, () => { if(p.exp>=p.nxtExp) levelUp(); showScreen('map-sc'); });
     }
 
@@ -387,7 +382,15 @@
         box.style.display='flex';
     }
 
-    function closeMsg(use) { document.getElementById('msg-box').style.display='none'; currentMenu=""; if(use && window.currentCb) window.currentCb(); }
+    function closeMsg(use) { 
+        document.getElementById('msg-box').style.display='none'; 
+        currentMenu = "";
+        if(use && window.currentCb) {
+            let cb = window.currentCb;
+            window.currentCb = null;
+            cb();
+        }
+    }
     function openStatus() { customMsg(`LV.${p.lv} 騎士<br>攻擊: ${p.atk+p.wAtk}<br>防禦: ${p.def+p.aDef}<br>武器: ${p.wName}<br>防具: ${p.aName}`); }
 </script>
 </body>
