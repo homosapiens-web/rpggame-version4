@@ -1,0 +1,402 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>地牢傳說 2.0</title>
+    <style>
+        :root { --hp: #2ecc71; --mp: #3498db; --en: #e74c3c; --bg: #0d0d0d; }
+        body { background: #000; color: #fff; font-family: 'Courier New', monospace; margin: 0; display: flex; justify-content: center; align-items: center; height: 100vh; overflow: hidden; }
+        #game { width: 420px; height: 850px; background: var(--bg); border: 4px solid #444; position: relative; display: flex; flex-direction: column; image-rendering: pixelated; }
+
+        /* 介面管理 */
+        .screen { position: absolute; top:0; left:0; width:100%; height:100%; display:none; flex-direction:column; background: var(--bg); z-index: 10; }
+        .active { display: flex; }
+
+        /* 地圖 UI */
+        #map-ui { padding: 12px; background: #111; border-bottom: 3px solid #444; font-size: 14px; line-height: 1.4; }
+        #grid-box { flex-grow: 1; display: flex; justify-content: center; align-items: center; overflow: hidden; background: #000; }
+        #grid { display: grid; grid-template-columns: repeat(15, 26px); grid-template-rows: repeat(15, 26px); border: 2px solid #333; }
+        .cell { width: 26px; height: 26px; background-size: 20px; background-repeat: no-repeat; background-position: center; }
+        
+        /* 牆、地、人、怪素材 */
+        .w { background-color: #333; background-image: url("data:image/svg+xml,%3Csvg width='4' height='4' viewBox='0 0 4 4' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M0 0h4v1H0z' fill='%23222'/%3E%3C/svg%3E"); }
+        .f { background-color: #111; border: 0.1px solid #1a1a1a; }
+        .s { background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 8 8' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M0 7h8V6H1V5h7V4H2V3h6V2H3V1h5V0H0v8h8V7z' fill='white'/%3E%3C/svg%3E"); }
+        .c { background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 8 8' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M1 2h6v5H1V2zm0 0h6v2H1V2zm2 2h2v1H3V4z' fill='%23f1c40f'/%3E%3C/svg%3E"); }
+        .p { background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 8 8' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M3 1h2v1H3V1zm0 2h2v4H3V3zm-1 0h1v2H2V3zm3 0h1v2H5V3z' fill='%233498db'/%3E%3Cpath d='M6 2h1v4H6V2z' fill='silver'/%3E%3C/svg%3E"); transform: scale(1.4); z-index: 5; }
+
+        /* 戰鬥畫面 */
+        .battle-view { height: 240px; display: flex; flex-direction: column; justify-content: center; align-items: center; background: #050505; border-bottom: 4px solid #444; gap: 10px; }
+        .enemy-container { display: flex; gap: 15px; justify-content: center; width: 100%; }
+        .sprite { width: 70px; height: 70px; background-size: contain; background-repeat: no-repeat; position: relative; }
+        .sprite.selected { filter: drop-shadow(0 0 5px #fff) brightness(1.5); }
+        .status-tag { position: absolute; top: -10px; font-size: 10px; padding: 1px 3px; border-radius: 2px; }
+
+        .bar-outer { width: 90%; height: 16px; background: #333; border: 2px solid #fff; margin: 4px auto; position: relative; }
+        .bar-fill { height: 100%; width: 100%; transition: 0.3s; }
+        .bar-txt { position: absolute; width: 100%; text-align: center; font-size: 10px; line-height: 16px; font-weight: bold; text-shadow: 1px 1px #000; }
+
+        #log { flex-grow: 1; padding: 12px; font-size: 12px; overflow-y: auto; background: #000; border: 1px solid #333; margin: 10px; line-height: 1.5; color: #bbb; }
+
+        /* 按鈕與搖桿 */
+        .btns { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; padding: 10px; }
+        button { background: #222; color: #fff; border: 2px solid #fff; padding: 12px; cursor: pointer; font-family: inherit; font-size: 14px; }
+        button:disabled { color: #555; border-color: #444; }
+        
+        #ctrls { height: 180px; background: #111; display: flex; justify-content: center; align-items: center; gap: 40px; }
+        .joy { display: grid; grid-template-areas: ". u ." "l d r"; gap: 10px; }
+        .j-btn { width: 55px; height: 55px; background: #333; border: 2px solid #fff; font-size: 24px; color: #fff; display: flex; justify-content: center; align-items: center; cursor: pointer; }
+
+        /* 自訂對話框 */
+        #msg-box { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 80%; background: #222; border: 3px solid #f1c40f; padding: 20px; z-index: 1000; display: none; flex-direction: column; box-shadow: 0 0 50px #000; }
+    </style>
+</head>
+<body>
+
+<div id="game">
+    <!-- 訊息彈窗 -->
+    <div id="msg-box">
+        <div id="msg-content" style="font-size:14px; line-height:1.6; margin-bottom:15px;"></div>
+        <div id="msg-btns" class="btns" style="padding:0"></div>
+    </div>
+
+    <!-- 開頭畫面 -->
+    <div id="start-sc" class="screen active" style="justify-content:center; align-items:center;">
+        <h1 style="color:#f1c40f; text-shadow: 4px 4px #811;">地牢傳說</h1>
+        <button onclick="startGame()" style="font-size:20px; padding:15px 50px">踏入地牢</button>
+    </div>
+
+    <!-- 地圖畫面 -->
+    <div id="map-sc" class="screen">
+        <div id="map-ui">
+            <div style="display:flex; justify-content:space-between">
+                <span>FLOOR: <b id="ui-fl" style="color:#f1c40f">1</b> | LV: <b id="ui-lv">1</b></span>
+                <span>EXP: <b id="ui-exp">0/100</b></span>
+            </div>
+            <div style="margin-top:6px; display:flex; justify-content:space-between">
+                <span style="color:var(--hp)">HP: <b id="ui-hp">50/50</b></span>
+                <span style="color:var(--mp)">MP: <b id="ui-mp">20/20</b></span>
+            </div>
+        </div>
+        <div id="grid-box"><div id="grid"></div></div>
+        <div id="ctrls">
+            <div class="joy">
+                <div class="j-btn" style="grid-area: u" onclick="move(0,-1)">▲</div>
+                <div class="j-btn" style="grid-area: l" onclick="move(-1,0)">◀</div>
+                <div class="j-btn" style="grid-area: r" onclick="move(1,0)">▶</div>
+                <div class="j-btn" style="grid-area: d" onclick="move(0,1)">▼</div>
+            </div>
+            <button onclick="openStatus()" style="height:60px; width:80px;">狀態</button>
+        </div>
+    </div>
+
+    <!-- 戰鬥畫面 -->
+    <div id="battle-sc" class="screen">
+        <div class="battle-view">
+            <div class="enemy-container" id="enemy-sprites"></div>
+            <div style="color:#555; font-size:12px;">— VS —</div>
+            <div class="sprite p">
+                <div id="pl-status" class="status-tag" style="right:0;"></div>
+            </div>
+        </div>
+        <div class="bar-outer"><div id="hp-en-f" class="bar-fill" style="background:var(--en)"></div><div class="bar-txt" id="txt-en-hp">ENEMY</div></div>
+        <div class="bar-outer">
+            <div class="bar-txt" id="txt-pl-hp">HP 50/50</div>
+            <div id="hp-pl-f" class="bar-fill" style="background:var(--hp)"></div>
+        </div>
+        <div class="bar-outer">
+            <div class="bar-txt" id="txt-pl-mp">MP 20/20</div>
+            <div id="mp-pl-f" class="bar-fill" style="background:var(--mp)"></div>
+        </div>
+        <div id="log"></div>
+        <div class="btns" id="battle-btns">
+            <button onclick="battleAction('atk')">物理攻擊</button>
+            <button onclick="battleAction('mag_menu')">魔法技能</button>
+            <button onclick="battleAction('itm_menu')">使用道具</button>
+            <button onclick="battleAction('run')">逃跑</button>
+        </div>
+    </div>
+</div>
+
+<script>
+    // --- 核心系統數據 ---
+    const p = {
+        lv: 1, exp: 0, nxtExp: 100, hp: 50, mHp: 50, mp: 20, mMp: 20, atk: 10, def: 5, fl: 1, x: 1, y: 1,
+        status: "", statusTurn: 0,
+        potions: 2, mPotions: 1, antidotes: 1,
+        wAtk: 5, aDef: 2, wName: "木劍 Lv.1", aName: "布衣 Lv.1",
+        skills: [{n:"斬擊 I", cost:0, pwr:1.3, lv:1}]
+    };
+
+    let map = [], enemies = [], currentTarget = 0;
+    const size = 15;
+
+    // --- 初始化 ---
+    function startGame() {
+        showScreen('map-sc');
+        generateMap();
+        window.addEventListener('keydown', e => {
+            const k = e.key.toLowerCase();
+            if(k=='w'||k=='arrowup') move(0,-1);
+            if(k=='s'||k=='arrowdown') move(0,1);
+            if(k=='a'||k=='arrowleft') move(-1,0);
+            if(k=='d'||k=='arrowright') move(1,0);
+        });
+    }
+
+    function showScreen(id) {
+        document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+        document.getElementById(id).classList.add('active');
+    }
+
+    // --- 地圖系統 ---
+    function generateMap() {
+        map = Array(size).fill().map(() => Array(size).fill('w'));
+        let x=2, y=2; p.x=x; p.y=y;
+        for(let i=0; i<120; i++){
+            map[y][x]='f';
+            let d = Math.floor(Math.random()*4);
+            if(d==0 && y>1) y--; else if(d==1 && y<size-2) y++;
+            else if(d==2 && x>1) x--; else if(d==3 && x<size-2) x++;
+        }
+        map[y][x]='s'; // 梯
+        for(let i=0; i<5; i++){
+            let rx=Math.floor(Math.random()*(size-2))+1, ry=Math.floor(Math.random()*(size-2))+1;
+            if(map[ry][rx]=='f') map[ry][rx]='c';
+        }
+        drawMap();
+    }
+
+    function drawMap() {
+        const g = document.getElementById('grid'); g.innerHTML = '';
+        for(let y=0; y<size; y++){
+            for(let x=0; x<size; x++){
+                const c = document.createElement('div');
+                c.className = `cell ${map[y][x]}`;
+                if(x==p.x && y==p.y) { const pl = document.createElement('div'); pl.className='p cell'; c.appendChild(pl); }
+                g.appendChild(c);
+            }
+        }
+        updateUI();
+    }
+
+    function move(dx, dy) {
+        if(!document.getElementById('map-sc').classList.contains('active')) return;
+        let nx=p.x+dx, ny=p.y+dy;
+        if(nx<0||nx>=size||ny<0||ny>=size||map[ny][nx]=='w') return;
+        p.x=nx; p.y=ny;
+        if(map[ny][nx]=='s'){ p.fl++; customMsg(`進入 FL.${p.fl}`, () => generateMap()); }
+        else if(map[ny][nx]=='c'){ openChest(); map[ny][nx]='f'; drawMap(); }
+        else {
+            drawMap();
+            let rate = p.fl < 3 ? 0.12 : 0.18; // 保持穩定的遇怪率
+            if(Math.random() < rate) startBattle();
+        }
+    }
+
+    // --- 自動生成系統 ---
+    function openChest() {
+        const names = ["生鏽的","磨損的","普通的","鋼鐵","白銀","勇者的"];
+        const types = ["劍","鎧甲"];
+        let lvl = Math.max(1, p.fl + Math.floor(Math.random()*2));
+        let isW = Math.random() > 0.5;
+        let n = names[Math.min(names.length-1, Math.floor(lvl/2))] + (isW?types[0]:types[1]) + " Lv." + lvl;
+        let val = lvl * 5;
+
+        customMsg(`發現寶箱！<br>獲得：${n}`, () => {
+            let curVal = isW ? p.wAtk : p.aDef;
+            let curName = isW ? p.wName : p.aName;
+            customChoice(`裝備：${n} (+${val})<br>目前：${curName} (+${curVal})<br>要換上嗎？`, [
+                {t:"換上", f:() => { if(isW){p.wAtk=val; p.wName=n;}else{p.aDef=val; p.aName=n;} updateUI(); }},
+                {t:"丟棄", f:() => {}}
+            ]);
+        });
+        if(Math.random()>0.7) p.potions++;
+    }
+
+    // --- 戰鬥系統 (多怪/狀態/精英) ---
+    function startBattle() {
+        enemies = [];
+        let count = Math.min(3, 1 + Math.floor(p.fl / 4)); // 隨樓層增加怪量
+        if(p.fl % 5 == 0) count = 1; // 精英層
+
+        const pre = ["狂暴的","虛弱的","劇毒的","麻痺的","黑暗"];
+        const kin = ["史萊姆","骷髏","殭屍","惡魔"];
+        const svgs = [
+            "data:image/svg+xml,%3Csvg viewBox='0 0 8 8' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M1 4h6v3H1V4zm1-1h4v1H2V3z' fill='%232ecc71'/%3E%3C/svg%3E",
+            "data:image/svg+xml,%3Csvg viewBox='0 0 8 8' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M2 1h4v3H2V1zm0 4h1v2H2V5zm3 0h1v2H5V5z' fill='white'/%3E%3C/svg%3E"
+        ];
+
+        for(let i=0; i<count; i++){
+            let lvl = p.fl;
+            let isElite = (p.fl % 5 == 0);
+            let name = (isElite?"【精英】":"") + pre[Math.floor(Math.random()*pre.length)] + kin[Math.floor(Math.random()*kin.length)];
+            let scale = isElite ? 2.5 : 1 + (lvl * 0.25); // 指數級增長
+            enemies.push({
+                n: name, h: Math.floor(40 * scale), mH: Math.floor(40 * scale), a: Math.floor(8 * scale),
+                img: svgs[Math.floor(Math.random()*svgs.length)], st: "", stT: 0
+            });
+        }
+        
+        currentTarget = 0;
+        document.getElementById('log').innerHTML = "遭遇敵人！戰鬥開始！";
+        showScreen('battle-sc');
+        renderEnemies();
+        updateBattleUI();
+    }
+
+    function renderEnemies() {
+        const box = document.getElementById('enemy-sprites'); box.innerHTML = '';
+        enemies.forEach((en, i) => {
+            const div = document.createElement('div');
+            div.className = `sprite ${i==currentTarget?'selected':''}`;
+            div.style.backgroundImage = `url("${en.img}")`;
+            div.onclick = () => { currentTarget = i; renderEnemies(); updateBattleUI(); };
+            if(en.st) div.innerHTML = `<span class="status-tag" style="background:red">${en.st}</span>`;
+            if(en.h <= 0) div.style.opacity = '0.2';
+            box.appendChild(div);
+        });
+    }
+
+    function battleAction(type) {
+        if(p.status == "麻痺" && Math.random() < 0.5){ addLog("麻痺中，無法行動！"); setTimeout(enemyTurn, 600); return; }
+        
+        let target = enemies[currentTarget];
+        if(target.h <= 0) { addLog("目標已死亡，請選擇其他對手！"); return; }
+
+        if(type=='atk') {
+            let dmg = Math.floor((p.atk + p.wAtk) * (0.9 + Math.random()*0.4));
+            target.h -= dmg;
+            addLog(`你攻擊 ${target.n}，造成 ${dmg} 傷害`);
+            if(Math.random()<0.1) { target.st="中毒"; target.stT=3; addLog(`${target.n} 中毒了！`); }
+        } else if(type=='mag_menu') {
+            let opts = p.skills.map(s => ({t:`${s.n}(${s.cost}MP)`, f:() => {
+                if(p.mp < s.cost) { addLog("MP不足！"); return; }
+                p.mp -= s.cost;
+                let dmg = Math.floor((p.atk + p.wAtk) * s.pwr);
+                target.h -= dmg;
+                addLog(`發動 ${s.n}！對 ${target.n} 造成 ${dmg} 傷害`);
+                nextTurn();
+            }}));
+            customChoice("選擇技能", opts); return;
+        } else if(type=='itm_menu') {
+            customChoice("使用道具", [
+                {t:`補血藥(${p.potions})`, f:() => { if(p.potions>0){p.potions--; p.hp=Math.min(p.mHp, p.hp+50); addLog("使用了補血藥"); nextTurn();} }},
+                {t:`補魔藥(${p.mPotions})`, f:() => { if(p.mPotions>0){p.mPotions--; p.mp=Math.min(p.mMp, p.mp+30); addLog("使用了補魔藥"); updateBattleUI();} }},
+                {t:`解毒劑(${p.antidotes})`, f:() => { if(p.antidotes>0){p.antidotes--; p.status=""; addLog("解除了異常狀態"); updateBattleUI();} }}
+            ]); return;
+        } else if(type=='run') {
+            if(Math.random()>0.5){ customMsg("逃跑成功！", () => showScreen('map-sc')); return; }
+            else { addLog("逃跑失敗！"); }
+        }
+        nextTurn();
+    }
+
+    function nextTurn() {
+        updateBattleUI();
+        renderEnemies();
+        if(enemies.every(e => e.h <= 0)) { win(); }
+        else { setTimeout(enemyTurn, 600); }
+    }
+
+    function enemyTurn() {
+        // 狀態傷害
+        if(p.status=="中毒"){ p.hp -= 5; addLog("中毒失血 5 點..."); p.statusTurn--; if(p.statusTurn<=0) p.status=""; }
+        
+        enemies.forEach(en => {
+            if(en.h <= 0) return;
+            if(en.st=="中毒"){ en.h -= 10; addLog(`${en.n} 毒發損失 10 點`); }
+            
+            let dmg = Math.max(2, en.a - (p.def + p.aDef) + Math.floor(Math.random()*5));
+            p.hp -= dmg;
+            addLog(`${en.n} 發動攻擊，造成 ${dmg} 傷害`, "var(--en)");
+            
+            if(Math.random()<0.1 && !p.status) { 
+                p.status = Math.random()>0.5?"中毒":"麻痺"; p.statusTurn=3; 
+                addLog(`你陷入了 ${p.status} 狀態！`);
+            }
+        });
+
+        updateBattleUI();
+        if(p.hp <= 0) customMsg("你被打敗了...", () => location.reload());
+    }
+
+    function win() {
+        let totalExp = enemies.length * (30 + p.fl * 15);
+        p.exp += totalExp;
+        customMsg(`戰鬥勝利！獲得 ${totalExp} 經驗值`, () => {
+            if(p.exp >= p.nxtExp) levelUp();
+            showScreen('map-sc');
+            drawMap();
+        });
+    }
+
+    function levelUp() {
+        p.lv++; p.exp -= p.nxtExp; p.nxtExp = Math.floor(p.nxtExp * 1.5); // 經驗需求提升
+        p.mHp += 25; p.hp = p.mHp; p.mMp += 15; p.mp = p.mMp; p.atk += 5;
+        
+        let skillMsg = "";
+        if(p.lv == 2) { p.skills.push({n:"烈火咒 I", cost:12, pwr:3, lv:1}); skillMsg="，學會了 烈火咒 I"; }
+        if(p.lv == 3) { p.skills[0] = {n:"斬擊 II", cost:0, pwr:2, lv:2}; skillMsg="，斬擊進化為 II"; }
+        if(p.lv == 5) { p.skills.push({n:"治癒光輝 I", cost:15, pwr:-40, lv:1}); skillMsg="，學會了 治癒光輝 I"; } // 負傷即補血
+        
+        customMsg(`等級提升至 LV.${p.lv}！全狀態回滿${skillMsg}`);
+    }
+
+    // --- UI/工具功能 ---
+    function addLog(m, c) { const l=document.getElementById('log'); l.innerHTML+=`<div style="color:${c||'#aaa'}">> ${m}</div>`; l.scrollTop=l.scrollHeight; }
+    
+    function updateUI() {
+        document.getElementById('ui-fl').innerText=p.fl; document.getElementById('ui-lv').innerText=p.lv;
+        document.getElementById('ui-exp').innerText=`${p.exp}/${p.nxtExp}`;
+        document.getElementById('ui-hp').innerText=`${p.hp}/${p.mHp}`;
+        document.getElementById('ui-mp').innerText=`${p.mp}/${p.mMp}`;
+    }
+
+    function updateBattleUI() {
+        let en = enemies[currentTarget];
+        document.getElementById('hp-en-f').style.width=(Math.max(0,en.h)/en.mH*100)+"%";
+        document.getElementById('txt-en-hp').innerText=`${en.n} HP: ${Math.max(0,en.h)}/${en.mH}`;
+        document.getElementById('hp-pl-f').style.width=(p.hp/p.mHp*100)+"%";
+        document.getElementById('mp-pl-f').style.width=(p.mp/p.mMp*100)+"%";
+        document.getElementById('txt-pl-hp').innerText=`HP ${p.hp}/${p.mHp} ${p.status?'['+p.status+']':''}`;
+        document.getElementById('txt-pl-mp').innerText=`MP ${p.mp}/${p.mMp}`;
+        document.getElementById('pl-status').innerText = p.status;
+        updateUI();
+    }
+
+    function customMsg(txt, callback) {
+        const box = document.getElementById('msg-box');
+        document.getElementById('msg-content').innerHTML = txt;
+        const btnArea = document.getElementById('msg-btns');
+        btnArea.innerHTML = `<button onclick="closeMsg(${callback?'1':'0'})">確定</button>`;
+        box.style.display = 'flex';
+        window.currentCallback = callback;
+    }
+
+    function customChoice(txt, opts) {
+        const box = document.getElementById('msg-box');
+        document.getElementById('msg-content').innerHTML = txt;
+        const btnArea = document.getElementById('msg-btns');
+        btnArea.innerHTML = '';
+        opts.forEach(o => {
+            const b = document.createElement('button');
+            b.innerText = o.t;
+            b.onclick = () => { box.style.display='none'; o.f(); };
+            btnArea.appendChild(b);
+        });
+        box.style.display = 'flex';
+    }
+
+    function closeMsg(useCb) {
+        document.getElementById('msg-box').style.display = 'none';
+        if(useCb && window.currentCallback) window.currentCallback();
+    }
+
+    function openStatus() {
+        customMsg(`<b>冒險者狀態</b><br>等級: LV.${p.lv}<br>樓層: FL.${p.fl}<br>攻擊: ${p.atk+p.wAtk}<br>防禦: ${p.def+p.aDef}<br>武器: ${p.wName}<br>防具: ${p.aName}<br>藥水: 補血x${p.potions}, 補魔x${p.mPotions}`);
+    }
+</script>
+</body>
+</html>
